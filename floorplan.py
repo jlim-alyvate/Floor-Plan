@@ -1,3 +1,4 @@
+import streamlit as st
 import numpy as np
 from shapely.geometry import box
 import svgwrite
@@ -8,121 +9,94 @@ class Room:
         self.name = name
         self.rotation = rotation
 
-def generate_connected_layout(total_width, total_height, room_size, corridor_width, progress_callback=None):
-    room_w, room_d = room_size
-    cell_size = min(room_w, room_d)
-    grid_w = int(total_width / cell_size)
-    grid_h = int(total_height / cell_size)
-    grid = np.zeros((grid_h, grid_w))
+def generate_optimized_layout(total_width, total_height, room_w, room_d, corridor_w, progress_callback=None):
+    grid_size = 0.5  # meters per grid cell for precision
+    cols = int(total_width / grid_size)
+    rows = int(total_height / grid_size)
+    grid = np.zeros((rows, cols))
 
-    scale = cell_size
-    def cells_for_rect(x, y, w, h):
-        return (int(y / scale), int(x / scale), int((y + h) / scale), int((x + w) / scale))
+    def coords_to_index(x, y):
+        return int(y / grid_size), int(x / grid_size)
 
-    def place_room(x, y, w, h, name):
-        top, left, bottom, right = cells_for_rect(x, y, w, h)
-        if bottom >= grid.shape[0] or right >= grid.shape[1]:
-            return None
-        if grid[top:bottom, left:right].shape != (bottom - top, right - left):
-            return None
-        if np.any(grid[top:bottom, left:right]):
-            return None
+    def can_place(x, y, w, h):
+        top, left = coords_to_index(x, y)
+        bottom, right = coords_to_index(x + w, y + h)
+        if bottom >= rows or right >= cols:
+            return False
+        return np.all(grid[top:bottom, left:right] == 0)
+
+    def mark_grid(x, y, w, h):
+        top, left = coords_to_index(x, y)
+        bottom, right = coords_to_index(x + w, y + h)
         grid[top:bottom, left:right] = 1
-        return Room(x, y, w, h, name)
 
     rooms = []
-    center_x = total_width / 2
-    center_y = total_height / 2
-    lobby_w, lobby_d = 6, corridor_width
-    lobby = place_room(center_x - lobby_w/2, center_y - lobby_d/2, lobby_w, lobby_d, "Lobby")
-    if lobby: rooms.append(lobby)
+    corridors = []
 
-    frontier = [(lobby.rect.bounds[0], lobby.rect.bounds[1])]
-    visited = set(frontier)
-    room_id = 0
-    steps = 0
-    max_steps = 1000
+    # Place central lobby
+    cx = (total_width - corridor_w) / 2
+    cy = (total_height - corridor_w) / 2
+    lobby = Room(cx, cy, corridor_w, corridor_w, "Lobby")
+    mark_grid(cx, cy, corridor_w, corridor_w)
+    corridors.append(lobby)
 
-    while frontier and steps < max_steps:
-        new_frontier = []
+    # Expand corridors and place rooms
+    frontier = [(cx, cy)]
+    room_count = 0
+    max_rooms = int((total_width * total_height * 0.8) / (room_w * room_d))
+
+    while frontier and room_count < max_rooms:
+        next_frontier = []
         for fx, fy in frontier:
-            for dx, dy in [(-corridor_width, 0), (corridor_width, 0), (0, -corridor_width), (0, corridor_width)]:
-                cx, cy = fx + dx, fy + dy
-                key = (round(cx, 1), round(cy, 1))
-                if key in visited:
+            for dx, dy in [(room_w + corridor_w, 0), (-room_w - corridor_w, 0), (0, room_d + corridor_w), (0, -room_d - corridor_w)]:
+                cx_new, cy_new = fx + dx, fy + dy
+                if not can_place(cx_new, cy_new, corridor_w, corridor_w):
                     continue
-                visited.add(key)
+                corridor = Room(cx_new, cy_new, corridor_w, corridor_w, f"Corridor-{len(corridors)}")
+                mark_grid(cx_new, cy_new, corridor_w, corridor_w)
+                corridors.append(corridor)
+                next_frontier.append((cx_new, cy_new))
 
-                corridor = place_room(cx, cy, corridor_width, corridor_width, f"Corridor-{room_id}")
-                if corridor:
-                    rooms.append(corridor)
-                    room_id += 1
-                    new_frontier.append((cx, cy))
+                # Place room beside corridor
+                for rdx, rdy in [(room_w, 0), (-room_w, 0), (0, room_d), (0, -room_d)]:
+                    rx, ry = cx_new + rdx, cy_new + rdy
+                    if not can_place(rx, ry, room_w, room_d):
+                        continue
 
-                    for rdx, rdy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
-                        rx, ry = cx + rdx, cy + rdy
-                        room_box = box(rx, ry, rx + room_w, ry + room_d)
-                        corridor_box = box(cx, cy, cx + corridor_width, cy + corridor_width)
+                    # Ensure room has one side on corridor, one side on building boundary
+                    room_rect = box(rx, ry, rx + room_w, ry + room_d)
+                    corridor_rect = box(cx_new, cy_new, cx_new + corridor_w, cy_new + corridor_w)
+                    if not room_rect.touches(corridor_rect):
+                        continue
+                    # Check room faces building boundary
+                    if not (rx <= 0 or ry <= 0 or rx + room_w >= total_width or ry + room_d >= total_height):
+                        continue
 
-                        if room_box.touches(corridor_box):
-                            back_offset = 0.01
-                            back_x = rx + (room_w if rdx < 0 else -back_offset if rdx > 0 else rx)
-                            back_y = ry + (room_d if rdy < 0 else -back_offset if rdy > 0 else ry)
-                            back_box = box(back_x, back_y, back_x + back_offset, back_y + back_offset)
-                            obstructed = any(r.rect.intersects(back_box) for r in rooms if "Room" in r.name)
-                            boundary_touch = (
-                                abs(rx) < 0.01 or abs(ry) < 0.01 or
-                                abs((rx + room_w) - total_width) < 0.01 or
-                                abs((ry + room_d) - total_height) < 0.01
-                            )
+                    room = Room(rx, ry, room_w, room_d, f"Room-{room_count}")
+                    mark_grid(rx, ry, room_w, room_d)
+                    rooms.append(room)
+                    room_count += 1
+                    break  # place one room per corridor
 
-                            if not obstructed and boundary_touch:
-                                placed = place_room(rx, ry, room_w, room_d, f"Room-{room_id}")
-                                if placed:
-                                    rooms.append(placed)
-                                    room_id += 1
-
-        frontier = new_frontier
-        steps += 1
+        frontier = next_frontier
         if progress_callback:
-            progress_callback(min(steps / max_steps, 1.0))
+            progress_callback(min(room_count / max_rooms, 1.0))
 
-    return rooms, room_w, room_d
+    return rooms + corridors
 
-def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
+def render_svg(units, total_width, total_height):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
     scale = 20
-
     for unit in units:
         x, y, x2, y2 = unit.rect.bounds
         width = x2 - x
         height = y2 - y
         x_px = x * scale
         y_px = (total_height - y2) * scale
-
-        if "Room" in unit.name and room_image_url:
-            img = dwg.image(href=room_image_url,
-                            insert=(x_px, y_px),
-                            size=(width * scale, height * scale),
-                            preserveAspectRatio="none")
-            dwg.add(img)
-
-        color = "none" if "Room" in unit.name and room_image_url else (
-            "lightblue" if "Room" in unit.name else
-            "#ccc" if "Corridor" in unit.name else
-            "orange" if "Lobby" in unit.name else
-            "white")
-
-        dwg.add(dwg.rect(insert=(x_px, y_px),
-                         size=(width * scale, height * scale),
-                         fill=color,
-                         stroke="black",
-                         stroke_width=1))
-
-        dwg.add(dwg.text(unit.name,
-                         insert=((x + width / 2) * scale, (total_height - y2 + height / 2) * scale),
-                         text_anchor="middle",
-                         font_size="8px",
-                         fill="black"))
+        fill = "#ccc" if "Corridor" in unit.name else ("orange" if "Lobby" in unit.name else "lightblue")
+        dwg.add(dwg.rect(insert=(x_px, y_px), size=(width * scale, height * scale), fill=fill, stroke="black"))
+        dwg.add(dwg.text(unit.name, insert=((x + width / 2) * scale, (total_height - y2 + height / 2) * scale),
+                         text_anchor="middle", font_size="8px", fill="black"))
+    return dwg.tostring()
 
     return dwg.tostring()
