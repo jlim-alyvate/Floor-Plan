@@ -1,48 +1,41 @@
-# app.py (with central + shaped corridor and room image upload)
+# app.py
 import streamlit as st
+from floorplan import generate_auto_scaled_plan, render_svg
 import base64
-import tempfile
-import os
-from floorplan import generate_optimized_layout, render_svg
 
 st.set_page_config(layout="wide")
-st.title("Hotel Room Layout Optimizer")
+st.title("Modular Floor Plan Generator")
 
-col1, col2 = st.columns([1, 3])
-
-with col1:
+# Sidebar inputs
+with st.sidebar:
+    st.header("Floor Settings")
     total_width = st.number_input("Total Floor Width (m)", min_value=10.0, value=30.0)
-    total_height = st.number_input("Total Floor Depth (m)", min_value=10.0, value=20.0)
-    room_w = st.number_input("Room Width (m)", min_value=2.0, value=3.5)
-    room_d = st.number_input("Room Depth (m)", min_value=2.0, value=5.0)
-    corridor_w = st.number_input("Corridor Width (m)", min_value=1.0, value=2.0)
-    room_image = st.file_uploader("Upload Room Template (PNG or JPEG)", type=["png", "jpg", "jpeg"])
-    generate = st.button("Generate Floor Plan")
+    total_height = st.number_input("Total Floor Height (m)", min_value=10.0, value=30.0)
 
-with col2:
-    if generate:
-        status = st.sidebar.empty()
-        progress = st.sidebar.progress(0.0)
+    st.header("Room Settings")
+    room_width = st.number_input("Room Width (m)", min_value=2.0, value=3.0)
+    room_depth = st.number_input("Room Depth (m)", min_value=2.0, value=5.0)
 
-        def update_progress(val):
-            status.text(f"Progress: {int(val*100)}%")
-            progress.progress(val)
+    st.header("Corridor Settings")
+    corridor_width = st.number_input("Corridor Width (m)", min_value=1.0, value=2.0)
 
-        with st.spinner("Generating layout..."):
-            units = generate_optimized_layout(total_width, total_height, room_w, room_d, corridor_w, update_progress)
+    st.header("Upload Room Template")
+    room_image = st.file_uploader("Upload room image (PNG or JPEG)", type=["png", "jpg", "jpeg"])
 
-            if room_image:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                    tmp.write(room_image.read())
-                    room_image_path = tmp.name
+# Image conversion to base64
+image_url = None
+if room_image is not None:
+    image_data = room_image.read()
+    image_base64 = base64.b64encode(image_data).decode("utf-8")
+    image_format = "jpeg" if room_image.type == "image/jpeg" else "png"
+    image_url = f"data:image/{image_format};base64,{image_base64}"
 
-                with open(room_image_path, "rb") as f:
-                    encoded = base64.b64encode(f.read()).decode()
-                image_url = f"data:image/png;base64,{encoded}"
-                svg = render_svg(units, total_width, total_height, image_url)
-                os.unlink(room_image_path)
-            else:
-                svg = render_svg(units, total_width, total_height)
+# Generate layout
+st.subheader("Generated Floor Plan")
+with st.spinner("Generating floor plan..."):
+    units, w, d = generate_auto_scaled_plan(total_width, total_height, (room_width, room_depth), corridor_width)
+    svg = render_svg(units, total_width, total_height, image_url, w, d)
+    st.image(svg, use_container_width=True)
 
-            st.image(svg, use_container_width=True)
-            status.text("✅ Done")
+    with st.expander("Show SVG Output"):
+        st.code(svg)
