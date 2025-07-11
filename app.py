@@ -1,6 +1,9 @@
 import streamlit as st
 from floorplan import generate_expanding_layout, render_svg
 import base64
+from io import BytesIO
+from PIL import Image
+import cairosvg
 
 # Streamlit App Setup
 st.set_page_config(layout="wide")
@@ -51,11 +54,13 @@ if st.button("Generate Floor Plan"):
     progress_bar.empty()
     percent_text.empty()
 
-    # Render Output
-    svg = render_svg(units, floor_width, floor_height, room_image_url, room_width, room_depth)
+    # Render SVG and convert to PNG for Streamlit
+    svg_data = render_svg(units, floor_width, floor_height, room_image_url, room_width, room_depth)
+    png_bytes = cairosvg.svg2png(bytestring=svg_data.encode("utf-8"))
+    image = Image.open(BytesIO(png_bytes))
 
     st.subheader("Generated Floor Plan")
-    st.image(svg, use_container_width=True)
+    st.image(image, use_container_width=True)
 
-    st.subheader("Generated Floor Plan")
-    st.image(svg, use_column_width=True)
+    # Optional: allow user to download SVG
+    st.download_button("Download SVG", svg_data, file_name="floorplan.svg", mime="image/svg+xml")
