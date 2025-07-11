@@ -51,7 +51,7 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
         ("L", 0, lobby_x),
         ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width)),
     ]:
-        # Try default orientation first
+        # Try both orientations
         cols_default = int(arm_width // room_width)
         cols_rotated = int(arm_width // room_depth)
 
@@ -94,16 +94,28 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
+        # Add rotated or normal image
         if "Room" in unit.name and room_image_url:
-            img = dwg.image(href=room_image_url,
-                            insert=(x_px, y_px),
-                            size=(width * scale, height * scale),
-                            preserveAspectRatio="none")
             if unit.rotation == 90:
-                cx = x_px + (width * scale / 2)
-                cy = y_px + (height * scale / 2)
-                img.rotate(90, center=(cx, cy))
-            dwg.add(img)
+                # Swap width and height for image
+                img = dwg.image(href=room_image_url,
+                                insert=(0, 0),
+                                size=(height * scale, width * scale),
+                                preserveAspectRatio="none")
+
+                group = dwg.g(transform=(
+                    f"translate({x_px + width*scale/2},{y_px + height*scale/2}) "
+                    f"rotate(90) "
+                    f"translate({-height*scale/2},{-width*scale/2})"
+                ))
+                group.add(img)
+                dwg.add(group)
+            else:
+                img = dwg.image(href=room_image_url,
+                                insert=(x_px, y_px),
+                                size=(width * scale, height * scale),
+                                preserveAspectRatio="none")
+                dwg.add(img)
 
         color = "none" if "Room" in unit.name and room_image_url else (
             "lightblue" if "Room" in unit.name else
