@@ -6,7 +6,7 @@ import io
 import base64
 from PIL import Image
 
-st.title("Hotel Floor Plan Generator (Room Image-Driven Layout)")
+st.title("Hotel Floor Plan Generator (Room Image-Controlled Layout)")
 
 with st.sidebar:
     st.header("Floor Parameters")
@@ -14,17 +14,28 @@ with st.sidebar:
     total_height = st.number_input("Total Floor Height (m)", 10.0, 100.0, 20.0)
     corridor_width = st.number_input("Corridor Width (m)", 1.0, 5.0, 2.0)
 
-    st.header("Room Template Upload")
+    st.header("Room Template Image")
     uploaded_img = st.file_uploader("Upload Room Plan Image", type=["png", "jpg", "jpeg"])
-    scale_factor = st.number_input("Scale factor (1 = 1m per pixel, adjust if needed)", 0.01, 100.0, 0.05)
+
+    manual_entry = st.checkbox("Manually specify room dimensions", value=True)
+
+    if manual_entry:
+        room_width = st.number_input("Room Width (m)", 2.0, 10.0, 3.0)
+        room_depth = st.number_input("Room Depth (m)", 2.0, 10.0, 5.0)
+    else:
+        scale_factor = st.number_input("Scale factor (1 = 1m per pixel)", 0.01, 100.0, 0.05)
 
 room_img_url = None
-room_aspect_ratio = (3.0, 5.0)  # default fallback
+room_aspect_ratio = (3.0, 5.0)  # fallback
 
 if uploaded_img:
-    img = Image.open(uploaded_img)
-    width_px, height_px = img.size
-    room_aspect_ratio = (width_px * scale_factor, height_px * scale_factor)
+    if not manual_entry:
+        img = Image.open(uploaded_img)
+        width_px, height_px = img.size
+        room_width = width_px * scale_factor
+        room_depth = height_px * scale_factor
+
+    room_aspect_ratio = (room_width, room_depth)
 
     room_img_bytes = uploaded_img.read()
     encoded_img = base64.b64encode(room_img_bytes).decode()
