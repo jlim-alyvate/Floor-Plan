@@ -1,3 +1,4 @@
+import numpy as np
 from shapely.geometry import box
 import svgwrite
 
@@ -5,107 +6,79 @@ class Room:
     def __init__(self, x, y, width, height, name, rotation=0):
         self.rect = box(x, y, x + width, y + height)
         self.name = name
-        self.rotation = rotation  # 0 or 90
+        self.rotation = rotation
 
-def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width):
-    room_width, room_depth = room_aspect_ratio
+def generate_expanding_layout(total_width, total_height, room_size, corridor_width):
+    room_w, room_d = room_size
+    cell_size = min(room_w, room_d) / 2  # finer grid resolution
+    grid_w = int(total_width / cell_size)
+    grid_h = int(total_height / cell_size)
+    grid = np.zeros((grid_h, grid_w))
 
+    scale = cell_size
+    def cells_for_rect(x, y, w, h):
+        return (int(y / scale), int(x / scale), int((y + h) / scale), int((x + w) / scale))
+
+    def place_room(x, y, w, h, name, rotation=0):
+        top, left, bottom, right = cells_for_rect(x, y, w, h)
+        if bottom >= grid.shape[0] or right >= grid.shape[1]:
+            return None
+        if np.any(grid[top:bottom, left:right]):
+            return None
+        grid[top:bottom, left:right] = 1
+        return Room(x, y, w, h, name, rotation)
+
+    rooms = []
     center_x = total_width / 2
     center_y = total_height / 2
+    lobby_w, lobby_d = 6, corridor_width
+    lobby = place_room(center_x - lobby_w/2, center_y - lobby_d/2, lobby_w, lobby_d, "Lobby")
+    if lobby: rooms.append(lobby)
 
-    lobby_width = 6
-    lobby_depth = corridor_width
-    lift_width = 2
-    lift_depth = 2
-
-    units = []
-
-    # Central lobby (corridor hub)
-    lobby_x = center_x - lobby_width / 2
-    lobby_y = center_y - lobby_depth / 2
-    units.append(Room(lobby_x, lobby_y, lobby_width, lobby_depth, "Lobby"))
-
-    # Two lifts above lobby
-    lift1_x = lobby_x + 0.5
-    lift2_x = lobby_x + lobby_width - lift_width - 0.5
-    lift_y = lobby_y + lobby_depth
-    units.append(Room(lift1_x, lift_y, lift_width, lift_depth, "Lift-1"))
-    units.append(Room(lift2_x, lift_y, lift_width, lift_depth, "Lift-2"))
-
-    # Horizontal corridor arms
-    corridor_length_x = total_width / 2 - lobby_width / 2
-    corridor_y = center_y - corridor_width / 2
-    units.append(Room(0, corridor_y, lobby_x, corridor_width, "Corridor-Left"))
-    units.append(Room(lobby_x + lobby_width, corridor_y, corridor_length_x, corridor_width, "Corridor-Right"))
-
-    # Vertical corridor arms
-    corridor_length_y = total_height / 2 - lobby_depth / 2
-    corridor_x = center_x - corridor_width / 2
-    units.append(Room(corridor_x, 0, corridor_width, lobby_y, "Corridor-Down"))
-    units.append(Room(corridor_x, lobby_y + lobby_depth, corridor_width, corridor_length_y, "Corridor-Up"))
-
-    occupied = []
-
-    def is_back_clear(candidate):
-        for other in occupied:
-            if candidate.rect.touches(other.rect):
-                return False
-        return True
-
+    # Initialize corridor frontier (for BFS-like growth)
+    frontier = [(center_x, center_y)]
+    visited = set()
     room_id = 0
 
-    # Horizontal Arms (Left/Right)
-    for direction, start_x, arm_width in [
-        ("L", 0, lobby_x),
-        ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width)),
-    ]:
-        cols_default = int(arm_width // room_width)
-        cols_rotated = int(arm_width // room_depth)
-        use_rotated = cols_rotated > cols_default
-        room_w, room_h = (room_depth, room_width) if use_rotated else (room_width, room_depth)
-        rotation = 90 if use_rotated else 0
+    while frontier:
+        new_frontier = []
+        for fx, fy in frontier:
+            for dx, dy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
+                cx, cy = fx + dx, fy + dy
+                key = (round(cx, 2), round(cy, 2))
+                if key in visited:
+                    continue
+                visited.add(key)
 
-        for i in range(int(arm_width // room_w)):
-            x = start_x + i * room_w
-            y_below = corridor_y - room_h
-            y_above = corridor_y + corridor_width
+                # Try placing corridor
+                cor = place_room(cx, cy, corridor_width, corridor_width, f"Corridor-{room_id}")
+                if cor:
+                    rooms.append(cor)
+                    room_id += 1
+                    new_frontier.append((cx, cy))
 
-            below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation)
-            if y_below > 0 and is_back_clear(Room(x, y_below - 0.01, room_w, 0.01, "", 0)):
-                units.append(below)
-                occupied.append(below)
+                    # Try placing rooms around new corridor
+                    for rdx, rdy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
+                        rx, ry = cx + rdx, cy + rdy
+                        room_box = box(rx, ry, rx + room_w, ry + room_d)
+                        corridor_box = box(cx, cy, cx + corridor_width, cy + corridor_width)
 
-            above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation)
-            if y_above + room_h < total_height and is_back_clear(Room(x, y_above + room_h, room_w, 0.01, "", 0)):
-                units.append(above)
-                occupied.append(above)
+                        # Check if room touches corridor and its opposite wall is free
+                        if room_box.touches(corridor_box):
+                            back_offset = 0.01
+                            back_x = rx + (room_w if rdx < 0 else -back_offset if rdx > 0 else rx)
+                            back_y = ry + (room_d if rdy < 0 else -back_offset if rdy > 0 else ry)
+                            back_box = box(back_x, back_y, back_x + back_offset, back_y + back_offset)
+                            obstructed = any(r.rect.intersects(back_box) for r in rooms if "Room" in r.name)
 
-            room_id += 1
+                            if not obstructed:
+                                placed = place_room(rx, ry, room_w, room_d, f"Room-{room_id}")
+                                if placed:
+                                    rooms.append(placed)
+                                    room_id += 1
+        frontier = new_frontier
 
-    # Vertical Arms (Up/Down)
-    for direction, start_y, arm_height in [
-        ("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth)),
-        ("D", 0, lobby_y),
-    ]:
-        rows = int(arm_height // room_depth)
-        for i in range(rows):
-            y = start_y + i * room_depth
-            x_left = corridor_x - room_width
-            x_right = corridor_x + corridor_width
-
-            left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", 0)
-            if x_left > 0 and is_back_clear(Room(x_left - 0.01, y, 0.01, room_depth, "", 0)):
-                units.append(left)
-                occupied.append(left)
-
-            right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", 0)
-            if x_right + room_width < total_width and is_back_clear(Room(x_right + room_width, y, 0.01, room_depth, "", 0)):
-                units.append(right)
-                occupied.append(right)
-
-            room_id += 1
-
-    return units, room_width, room_depth
+    return rooms, room_w, room_d
 
 def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
@@ -116,34 +89,20 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
         width = x2 - x
         height = y2 - y
         x_px = x * scale
-        y_px = (total_height - y2) * scale
+        y_px = (total_height - y2) * scale  # invert Y for SVG
 
-        # Image rendering
+        # Optional: Draw template image in room
         if "Room" in unit.name and room_image_url:
-            if unit.rotation == 90:
-                img = dwg.image(href=room_image_url,
-                                insert=(0, 0),
-                                size=(height * scale, width * scale),
-                                preserveAspectRatio="none")
-                group = dwg.g(transform=(
-                    f"translate({x_px + width*scale/2},{y_px + height*scale/2}) "
-                    f"rotate(90) "
-                    f"translate({-height*scale/2},{-width*scale/2})"
-                ))
-                group.add(img)
-                dwg.add(group)
-            else:
-                img = dwg.image(href=room_image_url,
-                                insert=(x_px, y_px),
-                                size=(width * scale, height * scale),
-                                preserveAspectRatio="none")
-                dwg.add(img)
+            img = dwg.image(href=room_image_url,
+                            insert=(x_px, y_px),
+                            size=(width * scale, height * scale),
+                            preserveAspectRatio="none")
+            dwg.add(img)
 
         color = "none" if "Room" in unit.name and room_image_url else (
             "lightblue" if "Room" in unit.name else
             "#ccc" if "Corridor" in unit.name else
             "orange" if "Lobby" in unit.name else
-            "red" if "Lift" in unit.name else
             "white")
 
         dwg.add(dwg.rect(insert=(x_px, y_px),
