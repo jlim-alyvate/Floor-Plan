@@ -12,44 +12,67 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
     room_width, room_depth = room_aspect_ratio
 
     cols = int(total_width // room_width)
-    corridor_y = (total_height - corridor_width) / 2
+    rows = int(total_height // room_depth)
+
+    center_x = total_width / 2
+    center_y = total_height / 2
+
     lobby_width = 6
-    lobby_depth = corridor_width  # treat lobby as part of corridor
+    lobby_depth = corridor_width
     lift_width = 2
     lift_depth = 2
 
     units = []
 
-    # Shared lobby (centered)
-    lobby_x = (total_width - lobby_width) / 2
-    lobby_y = corridor_y
+    # Central lobby (acts as corridor hub)
+    lobby_x = center_x - lobby_width / 2
+    lobby_y = center_y - lobby_depth / 2
     units.append(Room(lobby_x, lobby_y, lobby_width, lobby_depth, "Lobby"))
 
-    # Lifts above lobby
+    # Two lifts above lobby
     lift1_x = lobby_x + 0.5
     lift2_x = lobby_x + lobby_width - lift_width - 0.5
     lift_y = lobby_y + lobby_depth
     units.append(Room(lift1_x, lift_y, lift_width, lift_depth, "Lift-1"))
     units.append(Room(lift2_x, lift_y, lift_width, lift_depth, "Lift-2"))
 
-    # Corridor spans full width (including over the lobby)
-    units.append(Room(0, corridor_y, total_width, corridor_width, "Corridor"))
+    # Horizontal corridor arm (left and right of lobby)
+    corridor_length_x = int((total_width - lobby_width) / (2 * room_width)) * room_width
+    corridor_left_x = lobby_x - corridor_length_x
+    corridor_right_x = lobby_x + lobby_width
+    corridor_y = lobby_y
+    units.append(Room(corridor_left_x, corridor_y, corridor_length_x, corridor_width, "Corridor-Left"))
+    units.append(Room(corridor_right_x, corridor_y, corridor_length_x, corridor_width, "Corridor-Right"))
 
-    # Place one room per side per column, excluding lobby/lift zone
-    for j in range(cols):
-        x = j * room_width
+    # Vertical corridor arm (above and below lobby)
+    corridor_length_y = int((total_height - lobby_depth) / (2 * room_depth)) * room_depth
+    corridor_top_y = lobby_y + lobby_depth
+    corridor_bottom_y = lobby_y - corridor_length_y
+    units.append(Room(center_x - corridor_width / 2, corridor_top_y, corridor_width, corridor_length_y, "Corridor-Up"))
+    units.append(Room(center_x - corridor_width / 2, corridor_bottom_y, corridor_width, corridor_length_y, "Corridor-Down"))
 
-        # Skip overlapping the lift/lobby zone
-        overlaps_lobby = x + room_width > lobby_x and x < lobby_x + lobby_width
+    # Place rooms along corridor arms
+    room_id = 0
 
-        if not overlaps_lobby:
-            # Room below corridor
-            y_lower = corridor_y - room_depth
-            units.append(Room(x, y_lower, room_width, room_depth, f"Room-L-0-{j}"))
+    # Horizontal arms (left and right)
+    for direction, base_x in [("L", corridor_left_x), ("R", corridor_right_x)]:
+        for i in range(int(corridor_length_x // room_width)):
+            x = base_x + i * room_width if direction == "L" else base_x + i * room_width
+            y_below = corridor_y - room_depth
+            y_above = corridor_y + corridor_width
+            units.append(Room(x, y_below, room_width, room_depth, f"Room-{direction}-B-{room_id}"))
+            units.append(Room(x, y_above, room_width, room_depth, f"Room-{direction}-T-{room_id}"))
+            room_id += 1
 
-            # Room above corridor
-            y_upper = corridor_y + corridor_width
-            units.append(Room(x, y_upper, room_width, room_depth, f"Room-U-0-{j}"))
+    # Vertical arms (up and down)
+    for direction, base_y in [("U", corridor_top_y), ("D", corridor_bottom_y)]:
+        for i in range(int(corridor_length_y // room_depth)):
+            y = base_y + i * room_depth if direction == "U" else base_y + i * room_depth
+            x_left = center_x - corridor_width / 2 - room_width
+            x_right = center_x + corridor_width / 2
+            units.append(Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}"))
+            units.append(Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}"))
+            room_id += 1
 
     return units, room_width, room_depth
 
