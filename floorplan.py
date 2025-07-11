@@ -1,4 +1,4 @@
-# floorplan.py
+# floorplan.py (reverted to central + shape corridor layout)
 import numpy as np
 from shapely.geometry import box
 import svgwrite
@@ -20,31 +20,35 @@ def generate_optimized_layout(total_width, total_height, room_w, room_d, corrido
     layout[center_y][center_x] = 'Lobby'
     units.append(Room(center_x * room_w, center_y * room_d, corridor_w, corridor_w, "Lobby"))
 
-    corridors = [(center_y, center_x)]
-    visited = set(corridors)
-    room_id = 0
     max_rooms = int(grid_w * grid_h * 0.8)
+    room_id = 0
 
-    while corridors and room_id < max_rooms:
-        y, x = corridors.pop(0)
-        for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]:
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < grid_h and 0 <= nx < grid_w and (ny, nx) not in visited:
-                layout[ny][nx] = 'Corridor'
-                visited.add((ny, nx))
-                corridors.append((ny, nx))
-                units.append(Room(nx * room_w, ny * room_d, corridor_w, corridor_w, f"Corridor-{room_id}"))
-                room_id += 1
-
-                # attempt room placement
+    # Build + shaped corridor
+    arms = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+    for dy, dx in arms:
+        for step in range(1, max(grid_w, grid_h)):
+            y = center_y + dy * step
+            x = center_x + dx * step
+            if 0 <= y < grid_h and 0 <= x < grid_w:
+                if layout[y][x] is None:
+                    layout[y][x] = 'Corridor'
+                    units.append(Room(x * room_w, y * room_d, corridor_w, corridor_w, f"Corridor-{room_id}"))
+                    room_id += 1
                 for rdy, rdx in [(-1,0),(1,0),(0,-1),(0,1)]:
-                    ry, rx = ny + rdy, nx + rdx
+                    ry, rx = y + rdy, x + rdx
                     by, bx = ry + rdy, rx + rdx
                     if 0 <= ry < grid_h and 0 <= rx < grid_w and layout[ry][rx] is None:
-                        if not (0 <= by < grid_h and 0 <= bx < grid_w and layout[by][bx] is not None):
+                        if not (0 <= by < grid_h and 0 <= bx < grid_w and layout[by][bx] not in [None, 'Corridor']):
                             layout[ry][rx] = f"Room-{room_id}"
                             units.append(Room(rx * room_w, ry * room_d, room_w, room_d, f"Room-{room_id}"))
                             room_id += 1
+                            if room_id >= max_rooms:
+                                break
+            if room_id >= max_rooms:
+                break
+
+        if room_id >= max_rooms:
+            break
 
         if progress_callback:
             progress_callback(room_id / max_rooms)
