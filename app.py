@@ -55,4 +55,7 @@ if st.button("Generate Floor Plan"):
     svg = render_svg(units, floor_width, floor_height, room_image_url, room_width, room_depth)
 
     st.subheader("Generated Floor Plan")
+    st.image(svg, use_container_width=True)
+
+    st.subheader("Generated Floor Plan")
     st.image(svg, use_column_width=True)
