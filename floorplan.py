@@ -8,33 +8,37 @@ class Room:
         self.rect = box(x, y, x + width, y + height)
         self.name = name
 
-def generate_double_corridor_plan(total_width, total_height, room_width, room_depth, corridor_width):
-    upper_rooms = []
-    lower_rooms = []
-    units = []
+def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width):
+    room_width, room_depth = room_aspect_ratio
 
-    corridor_y = (total_height - corridor_width) / 2
+    usable_height = total_height - corridor_width
+    rows_per_side = int((usable_height / 2) // room_depth)
     cols = int(total_width // room_width)
 
+    units = []
+    corridor_y = (total_height - corridor_width) / 2
+
     # Lower rooms
-    for i in range(cols):
-        x = i * room_width
-        y = corridor_y - room_depth
-        lower_rooms.append(Room(x, y, room_width, room_depth, f"Room-L-{i}"))
+    for i in range(rows_per_side):
+        for j in range(cols):
+            x = j * room_width
+            y = corridor_y - (i + 1) * room_depth
+            units.append(Room(x, y, room_width, room_depth, f"Room-L-{i}-{j}"))
 
     # Upper rooms
-    for i in range(cols):
-        x = i * room_width
-        y = corridor_y + corridor_width
-        upper_rooms.append(Room(x, y, room_width, room_depth, f"Room-U-{i}"))
+    for i in range(rows_per_side):
+        for j in range(cols):
+            x = j * room_width
+            y = corridor_y + corridor_width + i * room_depth
+            units.append(Room(x, y, room_width, room_depth, f"Room-U-{i}-{j}"))
 
     # Corridor
     corridor = Room(0, corridor_y, total_width, corridor_width, "Corridor")
+    units.append(corridor)
 
-    units = lower_rooms + upper_rooms + [corridor]
-    return units
+    return units, room_width, room_depth
 
-def render_svg(units, total_width, total_height, room_image_url=None):
+def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
     scale = 20  # 1 meter = 20px
 
@@ -45,7 +49,7 @@ def render_svg(units, total_width, total_height, room_image_url=None):
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
-        # Add background image if available and room
+        # Add image to rooms
         if "Room" in unit.name and room_image_url:
             dwg.add(dwg.image(href=room_image_url,
                               insert=(x_px, y_px),
