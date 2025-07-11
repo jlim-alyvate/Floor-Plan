@@ -16,7 +16,7 @@ with col1:
     room_w = st.number_input("Room Width (m)", min_value=2.0, value=3.5)
     room_d = st.number_input("Room Depth (m)", min_value=2.0, value=5.0)
     corridor_w = st.number_input("Corridor Width (m)", min_value=1.0, value=2.0)
-    room_image = st.file_uploader("Upload Room Template (PNG)", type=["png"])
+    room_image = st.file_uploader("Upload Room Template (PNG or JPEG)", type=["png", "jpg", "jpeg"])
     generate = st.button("Generate Floor Plan")
 
 with col2:
