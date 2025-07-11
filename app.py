@@ -1,52 +1,30 @@
 import streamlit as st
-from floorplan import generate_connected_layout, render_svg
-import base64
-import streamlit.components.v1 as components
+from floorplan import generate_optimized_layout, render_svg
 
-# Streamlit config
 st.set_page_config(layout="wide")
-st.title("Optimized Hotel Floor Plan Generator")
+st.title("Hotel Room Layout Optimizer")
 
-# Sidebar inputs
-st.sidebar.header("Floor Plan Settings")
-floor_width = st.sidebar.number_input("Total Floor Width (m)", value=30.0, min_value=10.0)
-floor_height = st.sidebar.number_input("Total Floor Height (m)", value=20.0, min_value=10.0)
-room_width = st.sidebar.number_input("Room Width (m)", value=3.0, min_value=2.0)
-room_depth = st.sidebar.number_input("Room Depth (m)", value=5.0, min_value=3.0)
-corridor_width = st.sidebar.number_input("Corridor Width (m)", value=2.0, min_value=1.0)
+col1, col2 = st.columns([1, 3])
 
-st.sidebar.markdown("---")
-room_image = st.sidebar.file_uploader("Upload Template Room Image (Optional)", type=["png", "jpg", "jpeg"])
+with col1:
+    total_width = st.number_input("Total Floor Width (m)", min_value=10.0, value=30.0)
+    total_height = st.number_input("Total Floor Depth (m)", min_value=10.0, value=20.0)
+    room_w = st.number_input("Room Width (m)", min_value=2.0, value=3.5)
+    room_d = st.number_input("Room Depth (m)", min_value=2.0, value=5.0)
+    corridor_w = st.number_input("Corridor Width (m)", min_value=1.0, value=2.0)
+    generate = st.button("Generate Floor Plan")
 
-if st.button("Generate Floor Plan"):
-    # Progress bar
-    percent_text = st.sidebar.empty()
-    progress_bar = st.sidebar.progress(0)
+with col2:
+    if generate:
+        status = st.sidebar.empty()
+        progress = st.sidebar.progress(0.0)
 
-    def update_progress(pct):
-        percent = int(pct * 100)
-        percent_text.markdown(f"**Progress: {percent}%**")
-        progress_bar.progress(pct)
+        def update_progress(val):
+            status.text(f"Progress: {int(val*100)}%")
+            progress.progress(val)
 
-    room_image_url = None
-    if room_image:
-        room_image_bytes = room_image.read()
-        room_image_b64 = base64.b64encode(room_image_bytes).decode("utf-8")
-        mime = "image/png" if room_image.type == "image/png" else "image/jpeg"
-        room_image_url = f"data:{mime};base64,{room_image_b64}"
-
-    rooms, rw, rd = generate_connected_layout(
-        total_width=floor_width,
-        total_height=floor_height,
-        room_size=(room_width, room_depth),
-        corridor_width=corridor_width,
-        progress_callback=update_progress
-    )
-
-    svg_data = render_svg(rooms, floor_width, floor_height, room_image_url, rw, rd)
-    progress_bar.empty()
-    percent_text.empty()
-
-    st.subheader("Generated Floor Plan")
-    components.html(svg_data, height=800, scrolling=True)
-    st.download_button("Download SVG", svg_data, file_name="floorplan.svg", mime="image/svg+xml")
+        with st.spinner("Generating layout..."):
+            units = generate_optimized_layout(total_width, total_height, room_w, room_d, corridor_w, update_progress)
+            svg = render_svg(units, total_width, total_height)
+            st.image(svg, use_container_width=True)
+            status.text("✅ Done")
