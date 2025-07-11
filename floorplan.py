@@ -8,9 +8,9 @@ class Room:
         self.name = name
         self.rotation = rotation
 
-def generate_expanding_layout(total_width, total_height, room_size, corridor_width):
+def generate_expanding_layout(total_width, total_height, room_size, corridor_width, progress_callback=None):
     room_w, room_d = room_size
-    cell_size = min(room_w, room_d) / 2  # finer grid resolution
+    cell_size = min(room_w, room_d)
     grid_w = int(total_width / cell_size)
     grid_h = int(total_height / cell_size)
     grid = np.zeros((grid_h, grid_w))
@@ -35,12 +35,13 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
     lobby = place_room(center_x - lobby_w/2, center_y - lobby_d/2, lobby_w, lobby_d, "Lobby")
     if lobby: rooms.append(lobby)
 
-    # Initialize corridor frontier (for BFS-like growth)
     frontier = [(center_x, center_y)]
     visited = set()
     room_id = 0
+    steps_done = 0
+    max_steps = 1000
 
-    while frontier:
+    while frontier and steps_done < max_steps:
         new_frontier = []
         for fx, fy in frontier:
             for dx, dy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
@@ -50,20 +51,17 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
                     continue
                 visited.add(key)
 
-                # Try placing corridor
                 cor = place_room(cx, cy, corridor_width, corridor_width, f"Corridor-{room_id}")
                 if cor:
                     rooms.append(cor)
                     room_id += 1
                     new_frontier.append((cx, cy))
 
-                    # Try placing rooms around new corridor
                     for rdx, rdy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
                         rx, ry = cx + rdx, cy + rdy
                         room_box = box(rx, ry, rx + room_w, ry + room_d)
                         corridor_box = box(cx, cy, cx + corridor_width, cy + corridor_width)
 
-                        # Check if room touches corridor and its opposite wall is free
                         if room_box.touches(corridor_box):
                             back_offset = 0.01
                             back_x = rx + (room_w if rdx < 0 else -back_offset if rdx > 0 else rx)
@@ -76,22 +74,26 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
                                 if placed:
                                     rooms.append(placed)
                                     room_id += 1
+
+            steps_done += 1
+            if progress_callback:
+                progress_callback(min(steps_done / max_steps, 1.0))
+
         frontier = new_frontier
 
     return rooms, room_w, room_d
 
 def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
-    scale = 20  # 1 meter = 20px
+    scale = 20
 
     for unit in units:
         x, y, x2, y2 = unit.rect.bounds
         width = x2 - x
         height = y2 - y
         x_px = x * scale
-        y_px = (total_height - y2) * scale  # invert Y for SVG
+        y_px = (total_height - y2) * scale
 
-        # Optional: Draw template image in room
         if "Room" in unit.name and room_image_url:
             img = dwg.image(href=room_image_url,
                             insert=(x_px, y_px),
