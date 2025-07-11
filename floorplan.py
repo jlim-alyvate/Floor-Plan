@@ -1,3 +1,4 @@
+# floorplan.py (corridor fixed to proper '+' shape extending from central lobby)
 import numpy as np
 from shapely.geometry import box
 import svgwrite
@@ -22,35 +23,45 @@ def generate_optimized_layout(total_width, total_height, room_w, room_d, corrido
     max_rooms = int(grid_w * grid_h * 0.8)
     room_id = 0
 
-    # Build + shaped corridor
-    arms = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-    for dy, dx in arms:
-        for step in range(1, max(grid_w, grid_h)):
-            y = center_y + dy * step
-            x = center_x + dx * step
-            if 0 <= y < grid_h and 0 <= x < grid_w:
-                if layout[y][x] is None:
-                    layout[y][x] = 'Corridor'
-                    units.append(Room(x * room_w, y * room_d, corridor_w, corridor_w, f"Corridor-{room_id}"))
+    # Proper + shaped corridor extension
+    for dx in range(-grid_w, grid_w):
+        if dx == 0: continue
+        x = center_x + dx
+        if 0 <= x < grid_w:
+            layout[center_y][x] = 'Corridor'
+            units.append(Room(x * room_w, center_y * room_d, corridor_w, corridor_w, f"Corridor-{room_id}"))
+            room_id += 1
+
+    for dy in range(-grid_h, grid_h):
+        if dy == 0: continue
+        y = center_y + dy
+        if 0 <= y < grid_h:
+            layout[y][center_x] = 'Corridor'
+            units.append(Room(center_x * room_w, y * room_d, corridor_w, corridor_w, f"Corridor-{room_id}"))
+            room_id += 1
+
+    # Add rooms adjacent to corridors, but with building boundary on far side
+    for y in range(grid_h):
+        for x in range(grid_w):
+            if layout[y][x] is None:
+                is_adjacent_to_corridor = False
+                has_boundary = False
+                for dy, dx in [(-1,0),(1,0),(0,-1),(0,1)]:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < grid_h and 0 <= nx < grid_w:
+                        if layout[ny][nx] == 'Corridor':
+                            is_adjacent_to_corridor = True
+                    else:
+                        has_boundary = True  # touches edge of building
+
+                if is_adjacent_to_corridor and has_boundary:
+                    layout[y][x] = f"Room-{room_id}"
+                    units.append(Room(x * room_w, y * room_d, room_w, room_d, f"Room-{room_id}"))
                     room_id += 1
-                for rdy, rdx in [(-1,0),(1,0),(0,-1),(0,1)]:
-                    ry, rx = y + rdy, x + rdx
-                    by, bx = ry + rdy, rx + rdx
-                    if 0 <= ry < grid_h and 0 <= rx < grid_w and layout[ry][rx] is None:
-                        if not (0 <= by < grid_h and 0 <= bx < grid_w and layout[by][bx] not in [None, 'Corridor']):
-                            layout[ry][rx] = f"Room-{room_id}"
-                            units.append(Room(rx * room_w, ry * room_d, room_w, room_d, f"Room-{room_id}"))
-                            room_id += 1
-                            if room_id >= max_rooms:
-                                break
-            if room_id >= max_rooms:
-                break
-
-        if room_id >= max_rooms:
-            break
-
-        if progress_callback:
-            progress_callback(room_id / max_rooms)
+                    if progress_callback:
+                        progress_callback(room_id / max_rooms)
+                    if room_id >= max_rooms:
+                        break
 
     return units
 
