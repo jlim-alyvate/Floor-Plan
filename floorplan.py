@@ -44,9 +44,17 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
     units.append(Room(corridor_x, 0, corridor_width, lobby_y, "Corridor-Down"))
     units.append(Room(corridor_x, lobby_y + lobby_depth, corridor_width, corridor_length_y, "Corridor-Up"))
 
+    occupied = []
+
+    def is_back_clear(candidate):
+        for other in occupied:
+            if candidate.rect.touches(other.rect):
+                return False
+        return True
+
     room_id = 0
 
-    # Horizontal Arms (Left/Right) — with ROTATION if it fits more
+    # Horizontal Arms (Left/Right)
     for direction, start_x, arm_width in [
         ("L", 0, lobby_x),
         ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width)),
@@ -62,17 +70,19 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
             y_below = corridor_y - room_h
             y_above = corridor_y + corridor_width
 
-            # Check if the bottom room touches bottom edge
-            if y_below <= 0:
-                units.append(Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation=rotation))
+            below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation)
+            if y_below > 0 and is_back_clear(Room(x, y_below - 0.01, room_w, 0.01, "", 0)):
+                units.append(below)
+                occupied.append(below)
 
-            # Check if the top room touches top edge
-            if y_above + room_h >= total_height:
-                units.append(Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation=rotation))
+            above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation)
+            if y_above + room_h < total_height and is_back_clear(Room(x, y_above + room_h, room_w, 0.01, "", 0)):
+                units.append(above)
+                occupied.append(above)
 
             room_id += 1
 
-    # Vertical Arms (Up/Down) — NO rotation
+    # Vertical Arms (Up/Down)
     for direction, start_y, arm_height in [
         ("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth)),
         ("D", 0, lobby_y),
@@ -83,13 +93,15 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
             x_left = corridor_x - room_width
             x_right = corridor_x + corridor_width
 
-            # Check if left room touches left edge
-            if x_left <= 0:
-                units.append(Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", rotation=0))
+            left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", 0)
+            if x_left > 0 and is_back_clear(Room(x_left - 0.01, y, 0.01, room_depth, "", 0)):
+                units.append(left)
+                occupied.append(left)
 
-            # Check if right room touches right edge
-            if x_right + room_width >= total_width:
-                units.append(Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", rotation=0))
+            right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", 0)
+            if x_right + room_width < total_width and is_back_clear(Room(x_right + room_width, y, 0.01, room_depth, "", 0)):
+                units.append(right)
+                occupied.append(right)
 
             room_id += 1
 
@@ -106,7 +118,7 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
-        # Image rendering with rotation
+        # Image rendering
         if "Room" in unit.name and room_image_url:
             if unit.rotation == 90:
                 img = dwg.image(href=room_image_url,
