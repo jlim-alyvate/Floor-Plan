@@ -5,7 +5,7 @@ from floorplan import generate_auto_scaled_plan, render_svg
 import io
 import base64
 from PIL import Image
-from floorplan import generate_auto_scaled_plan, render_svg
+from floorplan import generate_expanding_layout, render_svg
 st.title("Hotel Floor Plan Generator (Room Image-Controlled Layout)")
 
 with st.sidebar:
