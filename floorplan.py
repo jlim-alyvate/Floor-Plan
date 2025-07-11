@@ -46,15 +46,13 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
 
     room_id = 0
 
-    # Horizontal Arms with ROTATION allowed
+    # Horizontal Arms (Left/Right) — with ROTATION if it fits more
     for direction, start_x, arm_width in [
         ("L", 0, lobby_x),
         ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width)),
     ]:
-        # Try both orientations
         cols_default = int(arm_width // room_width)
         cols_rotated = int(arm_width // room_depth)
-
         use_rotated = cols_rotated > cols_default
         room_w, room_h = (room_depth, room_width) if use_rotated else (room_width, room_depth)
         rotation = 90 if use_rotated else 0
@@ -63,11 +61,18 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
             x = start_x + i * room_w
             y_below = corridor_y - room_h
             y_above = corridor_y + corridor_width
-            units.append(Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation=rotation))
-            units.append(Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation=rotation))
+
+            # Check if the bottom room touches bottom edge
+            if y_below <= 0:
+                units.append(Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation=rotation))
+
+            # Check if the top room touches top edge
+            if y_above + room_h >= total_height:
+                units.append(Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation=rotation))
+
             room_id += 1
 
-    # Vertical Arms with NO rotation
+    # Vertical Arms (Up/Down) — NO rotation
     for direction, start_y, arm_height in [
         ("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth)),
         ("D", 0, lobby_y),
@@ -77,8 +82,15 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
             y = start_y + i * room_depth
             x_left = corridor_x - room_width
             x_right = corridor_x + corridor_width
-            units.append(Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", rotation=0))
-            units.append(Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", rotation=0))
+
+            # Check if left room touches left edge
+            if x_left <= 0:
+                units.append(Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", rotation=0))
+
+            # Check if right room touches right edge
+            if x_right + room_width >= total_width:
+                units.append(Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", rotation=0))
+
             room_id += 1
 
     return units, room_width, room_depth
@@ -94,15 +106,13 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
-        # Add rotated or normal image
+        # Image rendering with rotation
         if "Room" in unit.name and room_image_url:
             if unit.rotation == 90:
-                # Swap width and height for image
                 img = dwg.image(href=room_image_url,
                                 insert=(0, 0),
                                 size=(height * scale, width * scale),
                                 preserveAspectRatio="none")
-
                 group = dwg.g(transform=(
                     f"translate({x_px + width*scale/2},{y_px + height*scale/2}) "
                     f"rotate(90) "
