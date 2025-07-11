@@ -1,4 +1,3 @@
-# floorplan.py (reverted to central + shape corridor layout)
 import numpy as np
 from shapely.geometry import box
 import svgwrite
@@ -55,7 +54,7 @@ def generate_optimized_layout(total_width, total_height, room_w, room_d, corrido
 
     return units
 
-def render_svg(units, total_width, total_height):
+def render_svg(units, total_width, total_height, room_image_url=None):
     scale = 20
     dwg = svgwrite.Drawing(size=(f"{total_width*scale}px", f"{total_height*scale}px"))
 
@@ -66,13 +65,22 @@ def render_svg(units, total_width, total_height):
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
-        fill = "#ADD8E6" if "Room" in unit.name else ("orange" if "Lobby" in unit.name else "#ccc")
-
-        dwg.add(dwg.rect(insert=(x_px, y_px),
-                         size=(width * scale, height * scale),
-                         fill=fill,
-                         stroke="black",
-                         stroke_width=1))
+        if "Room" in unit.name and room_image_url:
+            dwg.add(dwg.image(
+                href=room_image_url,
+                insert=(x_px, y_px),
+                size=(width * scale, height * scale),
+                preserveAspectRatio="none"
+            ))
+        else:
+            fill = "#ADD8E6" if "Room" in unit.name else ("orange" if "Lobby" in unit.name else "#ccc")
+            dwg.add(dwg.rect(
+                insert=(x_px, y_px),
+                size=(width * scale, height * scale),
+                fill=fill,
+                stroke="black",
+                stroke_width=1
+            ))
 
         dwg.add(dwg.text(unit.name,
                          insert=(x_px + width * scale / 2, y_px + height * scale / 2),
