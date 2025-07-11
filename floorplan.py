@@ -16,6 +16,7 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
     grid = np.zeros((grid_h, grid_w))
 
     scale = cell_size
+
     def cells_for_rect(x, y, w, h):
         return (int(y / scale), int(x / scale), int((y + h) / scale), int((x + w) / scale))
 
@@ -23,6 +24,8 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
         top, left, bottom, right = cells_for_rect(x, y, w, h)
         if bottom >= grid.shape[0] or right >= grid.shape[1]:
             return None
+        if grid[top:bottom, left:right].shape != (bottom - top, right - left):
+            return None  # Skip if invalid shape
         if np.any(grid[top:bottom, left:right]):
             return None
         grid[top:bottom, left:right] = 1
@@ -32,21 +35,23 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
     center_x = total_width / 2
     center_y = total_height / 2
     lobby_w, lobby_d = 6, corridor_width
-    lobby = place_room(center_x - lobby_w/2, center_y - lobby_d/2, lobby_w, lobby_d, "Lobby")
-    if lobby: rooms.append(lobby)
+    lobby = place_room(center_x - lobby_w / 2, center_y - lobby_d / 2, lobby_w, lobby_d, "Lobby")
+    if lobby:
+        rooms.append(lobby)
 
     frontier = [(center_x, center_y)]
     visited = set()
     room_id = 0
     steps_done = 0
     max_steps = 1000
+    max_rooms = 200  # safety cap
 
     while frontier and steps_done < max_steps:
         new_frontier = []
         for fx, fy in frontier:
             for dx, dy in [(-room_w, 0), (room_w, 0), (0, -room_d), (0, room_d)]:
                 cx, cy = fx + dx, fy + dy
-                key = (round(cx, 2), round(cy, 2))
+                key = (round(cx, 1), round(cy, 1))
                 if key in visited:
                     continue
                 visited.add(key)
@@ -74,6 +79,8 @@ def generate_expanding_layout(total_width, total_height, room_size, corridor_wid
                                 if placed:
                                     rooms.append(placed)
                                     room_id += 1
+                                    if room_id >= max_rooms:
+                                        return rooms, room_w, room_d
 
             steps_done += 1
             if progress_callback:
