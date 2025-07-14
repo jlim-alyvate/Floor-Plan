@@ -1,3 +1,4 @@
+# floorplan.py
 from shapely.geometry import box
 import svgwrite
 
@@ -6,6 +7,15 @@ class Room:
         self.rect = box(x, y, x + width, y + height)
         self.name = name
         self.rotation = rotation
+
+def get_rotation_to_align(door_wall, corridor_side):
+    mapping = {
+        ("Top", "Top"): 0, ("Top", "Right"): 270, ("Top", "Bottom"): 180, ("Top", "Left"): 90,
+        ("Right", "Top"): 90, ("Right", "Right"): 0, ("Right", "Bottom"): 270, ("Right", "Left"): 180,
+        ("Bottom", "Top"): 180, ("Bottom", "Right"): 90, ("Bottom", "Bottom"): 0, ("Bottom", "Left"): 270,
+        ("Left", "Top"): 270, ("Left", "Right"): 180, ("Left", "Bottom"): 90, ("Left", "Left"): 0,
+    }
+    return mapping.get((door_wall, corridor_side), 0)
 
 def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width, room_metadata=None):
     room_width, room_depth = room_aspect_ratio
@@ -21,9 +31,11 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
     lift_depth = 2
 
     units = []
+
     lobby_x = center_x - lobby_width / 2
     lobby_y = center_y - lobby_depth / 2
     units.append(Room(lobby_x, lobby_y, lobby_width, lobby_depth, "Lobby"))
+
     lift1_x = lobby_x + 0.5
     lift2_x = lobby_x + lobby_width - lift_width - 0.5
     lift_y = lobby_y + lobby_depth
@@ -48,102 +60,80 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
         return True
 
     room_id = 0
-
-    # Horizontal Arms
-    for direction, start_x, arm_width in [("L", 0, lobby_x), ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width))]:
-        cols_default = int(arm_width // room_width)
-        cols_rotated = int(arm_width // room_depth)
-        use_rotated = cols_rotated > cols_default
-        room_w, room_h = (room_depth, room_width) if use_rotated else (room_width, room_depth)
-        rotation = 90 if use_rotated else 0
-
+    # Horizontal arms
+    for direction, start_x, arm_width, corridor_side in [
+        ("L", 0, lobby_x, "Right"),
+        ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width), "Left")
+    ]:
+        room_w, room_h = room_width, room_depth
         for i in range(int(arm_width // room_w)):
             x = start_x + i * room_w
             y_below = corridor_y - room_h
             y_above = corridor_y + corridor_width
+            rot = get_rotation_to_align(door_wall, corridor_side)
 
-            below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation)
+            below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rot)
             if y_below > 0 and is_back_clear(Room(x, y_below - 0.01, room_w, 0.01, "", 0)):
                 occupied.append(below)
                 units.append(below)
 
-            above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation)
+            above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rot)
             if y_above + room_h < total_height and is_back_clear(Room(x, y_above + room_h, room_w, 0.01, "", 0)):
                 occupied.append(above)
                 units.append(above)
-
             room_id += 1
 
-    # Vertical Arms
-    for direction, start_y, arm_height in [("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth)), ("D", 0, lobby_y)]:
-        rows = int(arm_height // room_depth)
-        for i in range(rows):
+    # Vertical arms
+    for direction, start_y, arm_height, corridor_side in [
+        ("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth), "Bottom"),
+        ("D", 0, lobby_y, "Top")
+    ]:
+        for i in range(int(arm_height // room_depth)):
             y = start_y + i * room_depth
             x_left = corridor_x - room_width
             x_right = corridor_x + corridor_width
+            rot = get_rotation_to_align(door_wall, corridor_side)
 
-            left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", 0)
+            left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", rot)
             if x_left > 0 and is_back_clear(Room(x_left - 0.01, y, 0.01, room_depth, "", 0)):
                 occupied.append(left)
                 units.append(left)
 
-            right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", 0)
+            right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", rot)
             if x_right + room_width < total_width and is_back_clear(Room(x_right + room_width, y, 0.01, room_depth, "", 0)):
                 occupied.append(right)
                 units.append(right)
-
             room_id += 1
 
     return units, room_width, room_depth
 
-def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
+def render_svg(units, total_width, total_height, room_image_url=None):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
     scale = 20
-
     for unit in units:
         x, y, x2, y2 = unit.rect.bounds
-        width = x2 - x
-        height = y2 - y
+        width, height = x2 - x, y2 - y
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
         if "Room" in unit.name and room_image_url:
             if unit.rotation == 90:
-                img = dwg.image(href=room_image_url,
-                                insert=(0, 0),
-                                size=(height * scale, width * scale),
-                                preserveAspectRatio="none")
+                img = dwg.image(href=room_image_url, insert=(0, 0),
+                                size=(height * scale, width * scale), preserveAspectRatio="none")
                 group = dwg.g(transform=(
                     f"translate({x_px + width*scale/2},{y_px + height*scale/2}) "
                     f"rotate(90) "
-                    f"translate({-height*scale/2},{-width*scale/2})"
-                ))
+                    f"translate({-height*scale/2},{-width*scale/2})"))
                 group.add(img)
                 dwg.add(group)
             else:
-                img = dwg.image(href=room_image_url,
-                                insert=(x_px, y_px),
-                                size=(width * scale, height * scale),
-                                preserveAspectRatio="none")
+                img = dwg.image(href=room_image_url, insert=(x_px, y_px),
+                                size=(width * scale, height * scale), preserveAspectRatio="none")
                 dwg.add(img)
 
-        color = "none" if "Room" in unit.name and room_image_url else (
-            "lightblue" if "Room" in unit.name else
-            "#ccc" if "Corridor" in unit.name else
-            "orange" if "Lobby" in unit.name else
-            "red" if "Lift" in unit.name else
-            "white")
-
-        dwg.add(dwg.rect(insert=(x_px, y_px),
-                         size=(width * scale, height * scale),
-                         fill=color,
-                         stroke="black",
-                         stroke_width=1))
-
+        dwg.add(dwg.rect(insert=(x_px, y_px), size=(width * scale, height * scale),
+                         fill="none", stroke="black", stroke_width=1))
         dwg.add(dwg.text(unit.name,
                          insert=((x + width / 2) * scale, (total_height - y2 + height / 2) * scale),
-                         text_anchor="middle",
-                         font_size="8px",
-                         fill="black"))
-
+                         text_anchor="middle", font_size="8px", fill="black"))
     return dwg.tostring()
