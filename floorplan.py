@@ -3,10 +3,11 @@ from shapely.geometry import box
 import svgwrite
 
 class Room:
-    def __init__(self, x, y, width, height, name, rotation=0):
+    def __init__(self, x, y, width, height, name, rotation=0, door_facing="Bottom"):
         self.rect = box(x, y, x + width, y + height)
         self.name = name
         self.rotation = rotation  # 0 or 90
+        self.door_facing = door_facing
 
 def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width, room_metadata=None):
     room_width, room_depth = room_aspect_ratio
@@ -36,20 +37,16 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
     units.append(Room(lift1_x, lift_y, lift_width, lift_depth, "Lift-1"))
     units.append(Room(lift2_x, lift_y, lift_width, lift_depth, "Lift-2"))
 
-    # Horizontal corridor arms
-    corridor_length_x = total_width / 2 - lobby_width / 2
+    # Corridors
     corridor_y = center_y - corridor_width / 2
-    units.append(Room(0, corridor_y, lobby_x, corridor_width, "Corridor-Left"))
-    units.append(Room(lobby_x + lobby_width, corridor_y, corridor_length_x, corridor_width, "Corridor-Right"))
-
-    # Vertical corridor arms
-    corridor_length_y = total_height / 2 - lobby_depth / 2
     corridor_x = center_x - corridor_width / 2
+
+    units.append(Room(0, corridor_y, lobby_x, corridor_width, "Corridor-Left"))
+    units.append(Room(lobby_x + lobby_width, corridor_y, total_width - (lobby_x + lobby_width), corridor_width, "Corridor-Right"))
     units.append(Room(corridor_x, 0, corridor_width, lobby_y, "Corridor-Down"))
-    units.append(Room(corridor_x, lobby_y + lobby_depth, corridor_width, corridor_length_y, "Corridor-Up"))
+    units.append(Room(corridor_x, lobby_y + lobby_depth, corridor_width, total_height - (lobby_y + lobby_depth), "Corridor-Up"))
 
     occupied = []
-
     def is_back_clear(candidate):
         for other in occupied:
             if candidate.rect.touches(other.rect):
@@ -57,8 +54,7 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
         return True
 
     room_id = 0
-
-    # Horizontal Arms (Left/Right)
+    # Room generation
     for direction, start_x, arm_width in [
         ("L", 0, lobby_x),
         ("R", lobby_x + lobby_width, total_width - (lobby_x + lobby_width)),
@@ -74,38 +70,11 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
             y_below = corridor_y - room_h
             y_above = corridor_y + corridor_width
 
-            below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation)
             if y_below > 0 and is_back_clear(Room(x, y_below - 0.01, room_w, 0.01, "", 0)):
-                occupied.append(below)
-                units.append(below)
+                units.append(Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation, door_wall))
 
-            above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation)
             if y_above + room_h < total_height and is_back_clear(Room(x, y_above + room_h, room_w, 0.01, "", 0)):
-                occupied.append(above)
-                units.append(above)
-
-            room_id += 1
-
-    # Vertical Arms (Up/Down)
-    for direction, start_y, arm_height in [
-        ("U", lobby_y + lobby_depth, total_height - (lobby_y + lobby_depth)),
-        ("D", 0, lobby_y),
-    ]:
-        rows = int(arm_height // room_depth)
-        for i in range(rows):
-            y = start_y + i * room_depth
-            x_left = corridor_x - room_width
-            x_right = corridor_x + corridor_width
-
-            left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", 0)
-            if x_left > 0 and is_back_clear(Room(x_left - 0.01, y, 0.01, room_depth, "", 0)):
-                occupied.append(left)
-                units.append(left)
-
-            right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", 0)
-            if x_right + room_width < total_width and is_back_clear(Room(x_right + room_width, y, 0.01, room_depth, "", 0)):
-                occupied.append(right)
-                units.append(right)
+                units.append(Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation, door_wall))
 
             room_id += 1
 
@@ -124,15 +93,15 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
 
         if "Room" in unit.name and room_image_url:
             if unit.rotation == 90:
-                img = dwg.image(href=room_image_url,
-                                insert=(0, 0),
-                                size=(height * scale, width * scale),
-                                preserveAspectRatio="none")
                 group = dwg.g(transform=(
                     f"translate({x_px + width*scale/2},{y_px + height*scale/2}) "
                     f"rotate(90) "
                     f"translate({-height*scale/2},{-width*scale/2})"
                 ))
+                img = dwg.image(href=room_image_url,
+                                insert=(0, 0),
+                                size=(height * scale, width * scale),
+                                preserveAspectRatio="none")
                 group.add(img)
                 dwg.add(group)
             else:
@@ -162,4 +131,3 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
                          fill="black"))
 
     return dwg.tostring()
-
