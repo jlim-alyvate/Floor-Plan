@@ -1,6 +1,6 @@
 # app_v8.py
 import streamlit as st
-from floorplan_v8 import generate_auto_scaled_plan, render_svg
+from floorplan import generate_auto_scaled_plan, render_svg
 
 st.set_page_config(layout="wide")
 st.title("🧱 Auto Floorplan Generator")
