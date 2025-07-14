@@ -1,39 +1,31 @@
-# room_configurator.py
-
 import streamlit as st
 from PIL import Image
 import io
 
-def configure_room_image(room_w, room_d):
-    st.sidebar.header("Room Configuration")
+def configure_room():
+    st.sidebar.subheader("Room Configuration")
 
-    uploaded_file = st.sidebar.file_uploader("Upload Room Template (JPG or PNG)", type=["jpg", "jpeg", "png"])
-    door_wall = st.sidebar.selectbox("Select Door Wall", ["Top", "Bottom", "Left", "Right"])
-    window_wall = st.sidebar.selectbox("Select Window Wall (Opposite of Door)", ["Top", "Bottom", "Left", "Right"])
+    uploaded_file = st.sidebar.file_uploader("Upload Room Template (JPEG or PNG)", type=["jpg", "jpeg", "png"])
+    if not uploaded_file:
+        return None, None, None, None
 
-    rotation = st.sidebar.slider("Rotate Room Image (degrees)", 0, 270, 0, step=90)
+    door_wall = st.sidebar.radio("Select Door Wall", ["Top", "Bottom", "Left", "Right"], index=1)
+    window_wall = st.sidebar.radio("Select Window Wall", ["Top", "Bottom", "Left", "Right"], index=0)
 
-    image_url = None
-    preview = None
+    rotation_angle = st.sidebar.slider("Rotate Room Image (°)", min_value=0, max_value=270, step=90, value=0)
 
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGBA")
-        image = image.rotate(rotation, expand=True)
+    try:
+        image = Image.open(uploaded_file)
+        if rotation_angle != 0:
+            image = image.rotate(-rotation_angle, expand=True)
 
-        # Resize to fit room dimensions
-        display_w, display_h = room_w * 100, room_d * 100
-        image = image.resize((int(display_w), int(display_h)))
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        byte_im = buf.getvalue()
-        image_url = "data:image/png;base64," + io.BytesIO(byte_im).getvalue().hex()
-        preview = image
+        st.sidebar.image(image, caption=f"Rotated Room ({rotation_angle}°)", use_container_width=True)
 
-    return {
-        "image_url": image_url,
-        "door_wall": door_wall,
-        "window_wall": window_wall,
-        "rotation": rotation,
-        "image_preview": preview,
-        "uploaded_file": uploaded_file
-    }
+        image_bytes = io.BytesIO()
+        image.save(image_bytes, format="PNG")
+        image_url = "data:image/png;base64," + image_bytes.getvalue().hex()
+
+        return image_url, door_wall, window_wall, rotation_angle
+    except Exception as e:
+        st.sidebar.error(f"Error loading image: {str(e)}")
+        return None, None, None, None
