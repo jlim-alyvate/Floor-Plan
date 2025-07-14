@@ -1,3 +1,4 @@
+# floorplan.py
 from shapely.geometry import box
 import svgwrite
 
@@ -7,8 +8,11 @@ class Room:
         self.name = name
         self.rotation = rotation  # 0 or 90
 
-def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width):
+def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corridor_width, room_metadata=None):
     room_width, room_depth = room_aspect_ratio
+
+    door_wall = room_metadata.get("door_wall") if room_metadata else "Bottom"
+    window_wall = room_metadata.get("window_wall") if room_metadata else "Top"
 
     center_x = total_width / 2
     center_y = total_height / 2
@@ -72,13 +76,13 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
 
             below = Room(x, y_below, room_w, room_h, f"Room-{direction}-B-{room_id}", rotation)
             if y_below > 0 and is_back_clear(Room(x, y_below - 0.01, room_w, 0.01, "", 0)):
-                units.append(below)
                 occupied.append(below)
+                units.append(below)
 
             above = Room(x, y_above, room_w, room_h, f"Room-{direction}-T-{room_id}", rotation)
             if y_above + room_h < total_height and is_back_clear(Room(x, y_above + room_h, room_w, 0.01, "", 0)):
-                units.append(above)
                 occupied.append(above)
+                units.append(above)
 
             room_id += 1
 
@@ -95,13 +99,13 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
 
             left = Room(x_left, y, room_width, room_depth, f"Room-{direction}-L-{room_id}", 0)
             if x_left > 0 and is_back_clear(Room(x_left - 0.01, y, 0.01, room_depth, "", 0)):
-                units.append(left)
                 occupied.append(left)
+                units.append(left)
 
             right = Room(x_right, y, room_width, room_depth, f"Room-{direction}-R-{room_id}", 0)
             if x_right + room_width < total_width and is_back_clear(Room(x_right + room_width, y, 0.01, room_depth, "", 0)):
-                units.append(right)
                 occupied.append(right)
+                units.append(right)
 
             room_id += 1
 
@@ -109,7 +113,7 @@ def generate_auto_scaled_plan(total_width, total_height, room_aspect_ratio, corr
 
 def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, room_d=5):
     dwg = svgwrite.Drawing(size=(f"{total_width*20}px", f"{total_height*20}px"))
-    scale = 20  # 1 meter = 20px
+    scale = 20
 
     for unit in units:
         x, y, x2, y2 = unit.rect.bounds
@@ -118,7 +122,6 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
         x_px = x * scale
         y_px = (total_height - y2) * scale
 
-        # Image rendering
         if "Room" in unit.name and room_image_url:
             if unit.rotation == 90:
                 img = dwg.image(href=room_image_url,
@@ -159,3 +162,4 @@ def render_svg(units, total_width, total_height, room_image_url=None, room_w=3, 
                          fill="black"))
 
     return dwg.tostring()
+
