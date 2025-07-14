@@ -1,69 +1,40 @@
+# app.py
 import streamlit as st
 from floorplan import generate_auto_scaled_plan, render_svg
 import base64
+from PIL import Image
+import io
 
 st.set_page_config(layout="wide")
-st.title("Modular Floor Plan Generator")
+st.title("Floor Plan Generator with Door/Window Orientation")
 
 # Sidebar inputs
-with st.sidebar:
-    st.header("1. Floor Dimensions")
-    total_width = st.number_input("Total Width (meters)", value=30)
-    total_height = st.number_input("Total Height (meters)", value=20)
+st.sidebar.header("Layout Settings")
+total_width = st.sidebar.slider("Total Width (m)", 20, 100, 50)
+total_height = st.sidebar.slider("Total Height (m)", 20, 100, 50)
+room_width = st.sidebar.slider("Room Width (m)", 2, 10, 3)
+room_depth = st.sidebar.slider("Room Depth (m)", 2, 10, 5)
+corridor_width = st.sidebar.slider("Corridor Width (m)", 1, 5, 2)
 
-    st.header("2. Room Settings")
-    room_width = st.number_input("Room Width (meters)", value=3.0)
-    room_depth = st.number_input("Room Depth (meters)", value=5.0)
-    corridor_width = st.number_input("Corridor Width (meters)", value=2.5)
+st.sidebar.header("Room Orientation")
+door_wall = st.sidebar.selectbox("Select the wall for the DOOR", ["Top", "Bottom", "Left", "Right"])
+window_wall = st.sidebar.selectbox("Select the wall for the WINDOW", ["Top", "Bottom", "Left", "Right"])
 
-    st.header("3. Room Template Image")
-    uploaded_file = st.file_uploader("Upload Room Template (PNG or JPEG)", type=["png", "jpg", "jpeg"])
-    image_url = None
-    if uploaded_file:
-        image_bytes = uploaded_file.read()
-        image_url = f"data:image/png;base64,{base64.b64encode(image_bytes).decode()}"
+room_image = st.sidebar.file_uploader("Upload Room Template Image (JPEG or PNG)", type=["jpg", "jpeg", "png"])
 
-    st.header("4. Door and Window Selection")
-    st.markdown("**Click a side of the rectangle to indicate door and window location**")
+room_image_url = None
+if room_image:
+    image = Image.open(room_image)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    room_image_url = f"data:image/png;base64,{encoded}"
 
-    selection_area = st.empty()
-
-    import streamlit_drawable_canvas as st_canvas
-
-    canvas_result = st_canvas.st_canvas(
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=2,
-        stroke_color="#000000",
-        background_color="#FFFFFF",
-        update_streamlit=True,
-        height=150,
-        width=300,
-        drawing_mode="line",
-        key="canvas",
-    )
-
-    door_wall = st.selectbox("Door Wall", ["Bottom", "Top", "Left", "Right"])
-    window_wall = st.selectbox("Window Wall", ["Top", "Bottom", "Left", "Right"])
-
-# Floorplan generation
 if st.button("Generate Floor Plan"):
     with st.spinner("Generating layout..."):
-        metadata = {
-            "door_wall": door_wall,
-            "window_wall": window_wall,
-        }
-        units, rw, rd = generate_auto_scaled_plan(
-            total_width,
-            total_height,
-            (room_width, room_depth),
-            corridor_width,
-            room_metadata=metadata,
-        )
-        svg = render_svg(units, total_width, total_height, image_url, room_width, room_depth)
-        st.success("Floor plan generated!")
-        st.image(svg, use_container_width=True)
+        room_metadata = {"door_wall": door_wall, "window_wall": window_wall}
+        units, rw, rd = generate_auto_scaled_plan(total_width, total_height, (room_width, room_depth), corridor_width, room_metadata)
+        svg = render_svg(units, total_width, total_height, room_image_url, room_width, room_depth)
+        st.image(svg, use_column_width=True)
 
-        # Optional: SVG download
-        b64 = base64.b64encode(svg.encode()).decode()
-        href = f'<a href="data:image/svg+xml;base64,{b64}" download="floorplan.svg">Download SVG</a>'
-        st.markdown(href, unsafe_allow_html=True)
+    st.success("Floor plan generated!")
