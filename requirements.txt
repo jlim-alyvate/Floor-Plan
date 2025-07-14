@@ -1,4 +1,5 @@
 streamlit
 shapely
 svgwrite
-pillow
+cairosvg
+Pillow
