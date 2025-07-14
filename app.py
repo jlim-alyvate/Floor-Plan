@@ -2,35 +2,59 @@ import streamlit as st
 from floorplan import generate_auto_scaled_plan, render_svg
 import base64
 import io
-from PIL import Image
 
 st.set_page_config(layout="wide")
-st.title("Hotel Room Layout Generator")
+st.title("🛠️ Room Layout Planner")
 
-col1, col2 = st.sidebar.columns(2)
-total_width = col1.number_input("Total Floor Width (m)", 10, 100, 40)
-total_height = col2.number_input("Total Floor Depth (m)", 10, 100, 30)
+# Sidebar Inputs
+st.sidebar.header("Layout Settings")
+total_width = st.sidebar.number_input("Total Floor Width (m)", min_value=10, max_value=100, value=40)
+total_height = st.sidebar.number_input("Total Floor Height (m)", min_value=10, max_value=100, value=30)
+room_width = st.sidebar.number_input("Room Width (m)", min_value=2.0, max_value=10.0, value=3.0)
+room_depth = st.sidebar.number_input("Room Depth (m)", min_value=2.0, max_value=10.0, value=5.0)
+corridor_width = st.sidebar.number_input("Corridor Width (m)", min_value=1.0, max_value=10.0, value=2.0)
 
-room_col1, room_col2 = st.sidebar.columns(2)
-room_width = room_col1.number_input("Room Width (m)", 2, 10, 3)
-room_depth = room_col2.number_input("Room Depth (m)", 2, 10, 5)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Room Image & Metadata")
 
-corridor_width = st.sidebar.slider("Corridor Width (m)", 1, 5, 2)
+uploaded_image = st.sidebar.file_uploader("Upload Room Image (PNG/JPEG)", type=["png", "jpg", "jpeg"])
 
-door_wall = st.sidebar.selectbox("Door Wall", ["Top", "Bottom", "Left", "Right"], index=1)
-window_wall = st.sidebar.selectbox("Window Wall", ["Top", "Bottom", "Left", "Right"], index=0)
+door_wall = st.sidebar.selectbox("Door Wall (faces corridor)", ["Bottom", "Top", "Left", "Right"], index=0)
+window_wall = st.sidebar.selectbox("Window Wall (must face outwards)", ["Top", "Bottom", "Left", "Right"], index=1)
 
-room_image = st.file_uploader("Upload Room Template Image (PNG or JPEG)", type=["png", "jpg", "jpeg"])
-image_url = None
-if room_image:
-    image_bytes = room_image.read()
-    encoded = base64.b64encode(image_bytes).decode()
-    mime = "image/png" if room_image.name.lower().endswith("png") else "image/jpeg"
-    image_url = f"data:{mime};base64,{encoded}"
-    st.image(image_bytes, caption="Uploaded Room Template", use_container_width=True)
+# Build floorplan when button is clicked
+if st.button("Generate Floorplan"):
+    with st.spinner("Building floorplan..."):
 
-if st.button("Generate Floor Plan"):
-    room_metadata = {"door_wall": door_wall, "window_wall": window_wall}
-    units, room_w, room_d = generate_auto_scaled_plan(total_width, total_height, (room_width, room_depth), corridor_width, room_metadata)
-    svg = render_svg(units, total_width, total_height, image_url, room_w, room_d)
-    st.components.v1.html(svg, height=700, scrolling=True)
+        # Convert uploaded image to base64
+        image_url = None
+        if uploaded_image:
+            image_bytes = uploaded_image.read()
+            base64_image = base64.b64encode(image_bytes).decode()
+            mime = "image/png" if uploaded_image.type == "image/png" else "image/jpeg"
+            image_url = f"data:{mime};base64,{base64_image}"
+
+        # Metadata
+        room_metadata = {
+            "door_wall": door_wall,
+            "window_wall": window_wall
+        }
+
+        # Generate layout
+        units, room_w, room_d = generate_auto_scaled_plan(
+            total_width,
+            total_height,
+            (room_width, room_depth),
+            corridor_width,
+            room_metadata=room_metadata
+        )
+
+        # Generate SVG
+        svg = render_svg(units, total_width, total_height, image_url, room_w, room_d)
+
+        # Display SVG
+        st.subheader("📐 Generated Floor Plan")
+        st.components.v1.html(svg, height=int(total_height * 22), scrolling=True)
+
+        # Optional: Download SVG
+        st.download_button("Download SVG", svg, file_name="floorplan.svg", mime="image/svg+xml")
