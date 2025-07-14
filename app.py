@@ -1,47 +1,52 @@
 import streamlit as st
-from floorplan import generate_auto_scaled_plan, render_svg
-from room_configurator import configure_room
+from PIL import Image
 import io
-import base64
+import floorplan
+from room_configurator import configure_room
 
 st.set_page_config(layout="wide")
-st.title("Floor Plan Generator")
 
-# Sidebar Inputs
-with st.sidebar:
-    st.header("Upload Room Template")
-    uploaded_image = st.file_uploader("Upload room image (JPEG or PNG)", type=["jpg", "jpeg", "png"])
+st.title("Auto-Generated Floor Plan")
+st.sidebar.header("Floor Plan Parameters")
 
-    if uploaded_image:
-        st.image(uploaded_image, caption="Uploaded Room Template", use_container_width=True)
+# Inputs
+total_width = st.sidebar.slider("Total Floor Width (m)", 20, 100, 40)
+total_height = st.sidebar.slider("Total Floor Height (m)", 20, 100, 30)
+room_width = st.sidebar.slider("Room Width (m)", 2, 10, 3)
+room_depth = st.sidebar.slider("Room Depth (m)", 2, 10, 5)
+corridor_width = st.sidebar.slider("Corridor Width (m)", 1, 5, 2)
 
-    st.markdown("---")
-    st.header("Room Configuration")
-    with st.expander("Click to configure door and window"):
-        room_metadata = configure_room(uploaded_image)
+# Room Configuration (Image, Door/Window wall, Rotation)
+st.sidebar.header("Room Template Setup")
+image_url, door_wall, window_wall, rotation_angle = configure_room()
 
-    st.markdown("---")
-    st.header("Room Dimensions")
-    room_w = st.number_input("Room Width (m)", min_value=1.0, max_value=20.0, value=3.0)
-    room_d = st.number_input("Room Depth (m)", min_value=1.0, max_value=20.0, value=5.0)
-    corridor_w = st.number_input("Corridor Width (m)", min_value=1.0, max_value=10.0, value=2.0)
-    total_width = st.number_input("Total Floor Width (m)", min_value=10.0, max_value=100.0, value=30.0)
-    total_height = st.number_input("Total Floor Height (m)", min_value=10.0, max_value=100.0, value=30.0)
+if st.sidebar.button("Generate Floor Plan"):
+    if not image_url:
+        st.error("Please upload a room image and configure door/window walls.")
+    else:
+        room_metadata = {
+            "door_wall": door_wall,
+            "window_wall": window_wall,
+            "rotation_angle": rotation_angle
+        }
 
-# Validate user input
-if uploaded_image is None:
-    st.warning("Please upload a room template image to proceed.")
-else:
-    # Prepare image URL
-    image_bytes = uploaded_image.read()
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-    image_url = f"data:image/png;base64,{image_base64}"
+        with st.spinner("Generating layout..."):
+            units, room_w, room_d = floorplan.generate_auto_scaled_plan(
+                total_width,
+                total_height,
+                (room_width, room_depth),
+                corridor_width,
+                room_metadata
+            )
 
-    # Generate floor plan
-    units, room_w_used, room_d_used = generate_auto_scaled_plan(
-        total_width, total_height, (room_w, room_d), corridor_w, room_metadata
-    )
+            svg = floorplan.render_svg(
+                units,
+                total_width,
+                total_height,
+                image_url,
+                room_w,
+                room_d
+            )
 
-    # Render SVG
-    svg = render_svg(units, total_width, total_height, image_url, room_w_used, room_d_used)
-    st.components.v1.html(svg, height=int(total_height * 20) + 50, scrolling=True)
+            st.subheader("Generated Floor Plan")
+            st.image(svg, use_container_width=True)
